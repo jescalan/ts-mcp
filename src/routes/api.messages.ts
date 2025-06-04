@@ -1,24 +1,24 @@
-import { createAPIFileRoute } from '@tanstack/react-start/api'
-import { getEvent } from 'vinxi/http'
+import { createAPIFileRoute } from "@tanstack/react-start/api";
+import { getEvent } from "vinxi/http";
 
-import { transports } from '@/utils/demo.sse'
+import { transports } from "@/utils/server";
 
-export const APIRoute = createAPIFileRoute('/api/messages')({
+export const APIRoute = createAPIFileRoute("/api/messages")({
   // @ts-ignore
   POST: async ({ request, params }) => {
-    const body = await request.json()
-    const url = new URL(request.url)
-    const sessionId = url.searchParams.get('sessionId') as string
-    const transport = transports[sessionId]
+    const body = await request.json();
+    const url = new URL(request.url);
+    const sessionId = url.searchParams.get("sessionId") as string;
+    const transport = transports[sessionId];
     if (transport) {
       try {
-        getEvent().node.res.statusCode = 200
-        await transport.handleMessage(body)
+        getEvent().node.res.statusCode = 200;
+        await transport.handleMessage(body);
       } catch (error) {
-        getEvent().node.res.send('Error handling message')
+        getEvent().node.res.send("Error handling message");
       }
     } else {
-      getEvent().node.res.send('No transport found for sessionId')
+      getEvent().node.res.send("No transport found for sessionId");
     }
   },
-})
+});
