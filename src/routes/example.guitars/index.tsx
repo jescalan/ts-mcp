@@ -1,46 +1,14 @@
-import React, { lazy, useState, useEffect, Suspense } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 
 import guitars from "../../data/example-guitars";
-
-const Agent = lazy(() =>
-  import("@/components/agent").then((mod) => ({ default: mod.Agent }))
-);
-
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-  }
-
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error(error, errorInfo);
-  }
-
-  render() {
-    return this.props.children;
-  }
-}
 
 export const Route = createFileRoute("/example/guitars/")({
   component: GuitarsIndex,
 });
 
 function GuitarsIndex() {
-  const [onClient, setOnClient] = useState(false);
-
-  useEffect(() => {
-    setOnClient(true);
-  }, []);
-
   return (
     <div className="bg-black text-white p-5">
-      {onClient && (
-        <Suspense fallback={<div>Loading...</div>}>
-          <ErrorBoundary>
-            <Agent />
-          </ErrorBoundary>
-        </Suspense>
-      )}
       <h1 className="text-3xl font-bold mb-8 text-center">Featured Guitars</h1>
       <div className="flex flex-wrap gap-12 justify-center">
         {guitars.map((guitar) => (

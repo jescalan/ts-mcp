@@ -1,4 +1,14 @@
-import { useRef, useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Send, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import rehypeHighlight from "rehype-highlight";
+import remarkGfm from "remark-gfm";
+
+import { showAIAssistant } from "../store/example-assistant";
+import GuitarRecommendation from "./example-GuitarRecommendation";
+
 import {
   RealtimeAgent,
   RealtimeSession,
@@ -8,17 +18,112 @@ import {
 import { z } from "zod";
 
 import { getAgentToken, getGuitars } from "@/utils/demo.ai";
+import SpectrumAnalyzer from "./spectrum-analyzer";
 
-export function Agent() {
+type Message = {
+  content: {
+    transcript?: string;
+    text?: string;
+  }[];
+  itemId: string;
+  role: "user" | "assistant";
+};
+
+function Messages({ messages }: { messages: Array<Message> }) {
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop =
+        messagesContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const filteredMessages = useMemo(() => {
+    const result: {
+      itemId: string;
+      role: "user" | "assistant";
+      text: string;
+    }[] = [];
+    for (const message of messages) {
+      for (const index in message.content) {
+        const part = message.content[index];
+        if (part.transcript || part.text) {
+          result.push({
+            itemId: `${message.itemId}-${index}`,
+            role: message.role,
+            text: part.transcript || part.text || "",
+          });
+        }
+      }
+    }
+    return result;
+  }, [messages]);
+
+  if (!filteredMessages.length) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+        Ask me anything! I'm here to help.
+      </div>
+    );
+  }
+
+  return (
+    <div ref={messagesContainerRef} className="flex-1 overflow-y-auto">
+      {filteredMessages.map(({ itemId, role, text }) => (
+        <div
+          key={itemId}
+          className={`py-3 ${
+            role === "assistant"
+              ? "bg-gradient-to-r from-orange-500/5 to-red-600/5"
+              : "bg-transparent"
+          }`}
+        >
+          {text.length > 0 && (
+            <div className="flex items-start gap-2 px-4">
+              {role === "assistant" ? (
+                <div className="w-6 h-6 rounded-lg bg-gradient-to-r from-orange-500 to-red-600 flex items-center justify-center text-xs font-medium text-white flex-shrink-0">
+                  AI
+                </div>
+              ) : (
+                <div className="w-6 h-6 rounded-lg bg-gray-700 flex items-center justify-center text-xs font-medium text-white flex-shrink-0">
+                  Y
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <ReactMarkdown
+                  className="prose dark:prose-invert max-w-none prose-sm"
+                  rehypePlugins={[
+                    rehypeRaw,
+                    rehypeSanitize,
+                    rehypeHighlight,
+                    remarkGfm,
+                  ]}
+                >
+                  {text}
+                </ReactMarkdown>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function AIAssistantDialog() {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<Array<Message>>([]);
+
   const apiKey = useRef<string | null>(null);
   const agentRef = useRef<RealtimeAgent | null>(null);
   const sessionRef = useRef<RealtimeSession | null>(null);
-  const [agentFFT, setAgentFFT] = useState<Float32Array | null>(null);
-  const agentAudioElementRef = useRef<HTMLAudioElement | null>(null);
+  const [agentAudioElement, setAgentAudioElement] =
+    useState<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     const init = async () => {
-      if (agentRef.current || !agentAudioElementRef.current) return;
+      if (agentRef.current || !agentAudioElement) return;
 
       const { token } = await getAgentToken();
       apiKey.current = token;
@@ -42,7 +147,7 @@ export function Agent() {
 
       const transport = new OpenAIRealtimeWebRTC({
         mediaStream: await navigator.mediaDevices.getUserMedia({ audio: true }),
-        audioElement: agentAudioElementRef.current!,
+        audioElement: agentAudioElement,
       });
 
       sessionRef.current = new RealtimeSession(agentRef.current, {
@@ -52,102 +157,78 @@ export function Agent() {
         apiKey: apiKey.current,
       });
       sessionRef.current.on("history_updated", (history) => {
-        // returns the full history of the session
-        console.log(history);
+        console.log(">>> history_updated", history);
+        setMessages(history as Message[]);
       });
     };
     init();
-  }, []);
-
-  useEffect(() => {
-    const audioEl = agentAudioElementRef.current;
-    if (!audioEl) return;
-
-    let lastStream: MediaStream | null = null;
-    let cleanup: (() => void) | undefined;
-    let pollId: number;
-
-    const poll = () => {
-      const stream = audioEl.srcObject;
-      if (stream instanceof MediaStream && stream !== lastStream) {
-        // Clean up previous analyser if any
-        if (cleanup) cleanup();
-        lastStream = stream;
-        // Set up analyser for new stream
-        let audioCtx = new AudioContext();
-        let source = audioCtx.createMediaStreamSource(stream);
-        let analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 1024;
-        let dataArray = new Float32Array(analyser.frequencyBinCount);
-        source.connect(analyser);
-        // Don't connect analyser to destination to avoid double playback
-        let rafId: number;
-        const update = () => {
-          analyser.getFloatFrequencyData(dataArray);
-          const minDb = analyser.minDecibels;
-          const maxDb = analyser.maxDecibels;
-          const normalized = Float32Array.from(
-            dataArray,
-            (v) => (v - minDb) / (maxDb - minDb)
-          );
-          setAgentFFT(normalized);
-          rafId = requestAnimationFrame(update);
-        };
-        update();
-        cleanup = () => {
-          if (rafId) cancelAnimationFrame(rafId);
-          audioCtx.close();
-        };
-      }
-      pollId = window.setTimeout(poll, 200);
-    };
-    poll();
 
     return () => {
-      if (pollId) clearTimeout(pollId);
-      if (cleanup) cleanup();
+      if (sessionRef.current) {
+        console.log(">>> closing session");
+        sessionRef.current.close();
+      }
     };
-  }, []);
+  }, [agentAudioElement]);
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sessionRef.current?.sendMessage({
+        type: "message",
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: input,
+          },
+        ],
+      });
+      setInput("");
+    }
+  };
 
   return (
-    <div>
-      {agentFFT && (
-        <svg
-          width={200}
-          height={200}
-          style={{
-            background: "#111",
-            display: "block",
-            margin: "1rem auto",
-            borderRadius: 16,
-          }}
+    <div className="absolute top-full right-0 mt-2 w-[700px] h-[600px] bg-gray-900 rounded-lg shadow-xl border border-orange-500/20 flex flex-col">
+      <div className="flex items-center justify-between p-3 border-b border-orange-500/20">
+        <h3 className="font-semibold text-white">AI Assistant</h3>
+        <button
+          onClick={() => showAIAssistant.setState((state) => !state)}
+          className="text-gray-400 hover:text-white transition-colors"
         >
-          <defs>
-            <radialGradient id="aiGradient" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#00fff7" stopOpacity="0.9" />
-              <stop offset="60%" stopColor="#ff00ea" stopOpacity="0.7" />
-              <stop offset="100%" stopColor="#111" stopOpacity="0.2" />
-            </radialGradient>
-          </defs>
-          {(() => {
-            // Use max magnitude, clamp between 0 and 1
-            const max = Math.max(0, ...agentFFT);
-            const clamped = Math.max(0, Math.min(1, max));
-            // Map to radius (min 60, max 95)
-            const radius = 60 + clamped * 35;
-            return (
-              <circle
-                cx={100}
-                cy={100}
-                r={radius}
-                fill="url(#aiGradient)"
-                style={{ transition: "r 0.1s linear" }}
-              />
-            );
-          })()}
-        </svg>
-      )}
-      <audio ref={agentAudioElementRef} className="w-64 h-10" />
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <audio ref={(r) => setAgentAudioElement(r)} />
+      <SpectrumAnalyzer audioElement={agentAudioElement} />
+
+      <Messages messages={messages} />
+
+      <div className="p-3 border-t border-orange-500/20">
+        <div className="relative">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your message..."
+            className="w-full rounded-lg border border-orange-500/20 bg-gray-800/50 pl-3 pr-10 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-transparent resize-none overflow-hidden"
+            rows={1}
+            style={{ minHeight: "36px", maxHeight: "120px" }}
+            onInput={(e) => {
+              const target = e.target as HTMLTextAreaElement;
+              target.style.height = "auto";
+              target.style.height = Math.min(target.scrollHeight, 120) + "px";
+            }}
+            onKeyDown={handleInputKeyDown}
+          />
+          <button
+            disabled={!input.trim()}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-orange-500 hover:text-orange-400 disabled:text-gray-500 transition-colors focus:outline-none"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
