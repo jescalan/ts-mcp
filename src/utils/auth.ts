@@ -23,7 +23,6 @@ export function withMcpAuth({
   }) => Promise<Record<string, any>>;
 }) {
   return async ({ request }: { request: Request }) => {
-    console.log(request);
     const origin = new URL(request.url).origin;
 
     // if no authorization header, return 401
