@@ -1,14 +1,11 @@
 import { createAPIFileRoute } from "@tanstack/react-start/api";
 import { getEvent } from "vinxi/http";
-import withAuth from "@/utils/auth";
+import { withMcpAuth, clerkAuth } from "@/utils/auth";
 import { transports } from "@/utils/server";
 
 export const APIRoute = createAPIFileRoute("/api/messages")({
-  // @ts-ignore
-  POST: withAuth({
-    auth: async () => {
-      return { userId: "123" };
-    },
+  POST: withMcpAuth({
+    auth: clerkAuth,
     // @ts-ignore
     handler: async ({ request }) => {
       const body = await request.json();
@@ -20,9 +17,11 @@ export const APIRoute = createAPIFileRoute("/api/messages")({
           getEvent().node.res.statusCode = 200;
           await transport.handleMessage(body, { authInfo: request.auth });
         } catch (error) {
+          // @ts-ignore
           getEvent().node.res.send("Error handling message");
         }
       } else {
+        // @ts-ignore
         getEvent().node.res.send("No transport found for sessionId");
       }
     },

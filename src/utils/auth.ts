@@ -1,15 +1,26 @@
+import { getAuth } from "@clerk/tanstack-react-start/server";
+
 declare global {
   interface Request {
     auth?: any;
   }
 }
 
-export default function withMcpAuth({
+/**
+ * Framework-agnostic authentication middleware for MCP servers
+ */
+export function withMcpAuth({
   handler,
   auth,
 }: {
   handler: ({ request }: { request: Request }) => Promise<Response>;
-  auth: (token: string, request: Request) => Promise<{ userId: string }>;
+  auth: ({
+    token,
+    request,
+  }: {
+    token: string;
+    request: Request;
+  }) => Promise<Record<string, any>>;
 }) {
   return async ({ request }: { request: Request }) => {
     console.log(request);
@@ -27,7 +38,7 @@ export default function withMcpAuth({
 
     // pass token and request to auth function, if it returns a falsy value,
     // return 401
-    const authResponse = await auth(token, request);
+    const authResponse = await auth({ token, request });
     if (!authResponse) return unauthorized(origin);
 
     // put the auth info on the request object, the mcp sdk will make it
@@ -45,4 +56,17 @@ function unauthorized(origin: string) {
       "WWW-Authenticate": `Bearer resource_metadata=${origin}/.well-known/oauth-protected-resource`,
     },
   });
+}
+
+/**
+ * Authorizes the request for Clerk as an auth provider.
+ */
+export async function clerkAuth({ request }: { request: Request }) {
+  const authObject = await getAuth(request, {
+    acceptsToken: "oauth_token",
+  });
+  if (!authObject.subject) {
+    throw new Error("OAuth access token is invalid");
+  }
+  return { subject: authObject.subject, scopes: authObject.scopes };
 }

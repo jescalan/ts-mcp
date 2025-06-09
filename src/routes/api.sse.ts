@@ -1,15 +1,12 @@
 import { createAPIFileRoute } from "@tanstack/react-start/api";
 import { getEvent } from "vinxi/http";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import withMcpAuth from "@/utils/auth";
-
 import { transports, server } from "@/utils/server";
+import { withMcpAuth, clerkAuth } from "@/utils/auth";
 
 export const APIRoute = createAPIFileRoute("/api/sse")({
   GET: withMcpAuth({
-    auth: async () => {
-      return { userId: "123" };
-    },
+    auth: clerkAuth,
     // @ts-ignore
     handler: async () => {
       const transport = new SSEServerTransport(
